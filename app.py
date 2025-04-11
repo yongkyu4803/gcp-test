@@ -22,24 +22,17 @@ def crawl_naver_news(search_keyword, scroll_count):
     options.add_argument('--headless')
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--disable-gpu')
+    options.add_argument('--disable-software-rasterizer')
+    options.add_argument('--window-size=1920,1080')
     
     # 웹드라이버 초기화
     try:
-        # Windows 환경에서 더 안정적인 방식으로 WebDriver 초기화
-        chrome_version = ChromeDriverManager().driver.get_version()
-        driver_path = ChromeDriverManager(version=chrome_version).install()
-        service = Service(driver_path)
+        service = Service()
         driver = webdriver.Chrome(service=service, options=options)
     except Exception as e:
         print(f"웹드라이버 초기화 오류: {str(e)}")
-        # 대체 방법 시도
-        try:
-            options.add_argument("--disable-gpu")
-            options.add_argument("--window-size=1920,1080")
-            driver = webdriver.Chrome(options=options)
-        except Exception as e2:
-            print(f"대체 방법도 실패: {str(e2)}")
-            return []
+        return []
     
     try:
         # 네이버 뉴스 검색 페이지로 이동
