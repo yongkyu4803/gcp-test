@@ -4,6 +4,7 @@ import base64
 import io
 import json
 from flask import Flask, render_template, request, jsonify, send_file
+from flask_cors import CORS  # 추가
 import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -11,6 +12,13 @@ from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
 app = Flask(__name__)
+CORS(app)  # 추가
+
+# 경로 디버깅용 로그
+print("앱 시작됨")
+print(f"앱 루트 경로: {app.root_path}")
+print(f"앱 스태틱 경로: {app.static_folder}")
+print(f"앱 템플릿 경로: {app.template_folder}")
 
 # 네이버 뉴스 크롤링 함수
 def crawl_naver_news(search_keyword, scroll_count):
@@ -19,20 +27,27 @@ def crawl_naver_news(search_keyword, scroll_count):
     
     # Chrome 옵션 설정
     options = webdriver.ChromeOptions()
-    options.add_argument('--headless')
+    options.add_argument('--headless=new')
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--disable-gpu')
-    options.add_argument('--disable-software-rasterizer')
     options.add_argument('--window-size=1920,1080')
     
     # 웹드라이버 초기화
     try:
-        service = Service()
+        service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
+        print("WebDriver 초기화 성공")
     except Exception as e:
         print(f"웹드라이버 초기화 오류: {str(e)}")
-        return []
+        # 실패 시 Docker 환경인 경우 다른 방법으로 시도
+        try:
+            options.binary_location = "/usr/bin/google-chrome-stable"
+            driver = webdriver.Chrome(options=options)
+            print("Docker 환경에서 WebDriver 초기화 성공")
+        except Exception as e:
+            print(f"Docker 환경에서도 웹드라이버 초기화 실패: {str(e)}")
+            return []
     
     try:
         # 네이버 뉴스 검색 페이지로 이동
@@ -109,14 +124,21 @@ def crawl_naver_news(search_keyword, scroll_count):
 
 @app.route('/')
 def index():
+    print("/ 라우트 호출됨")
     return render_template('index.html')
 
 @app.route('/crawl', methods=['POST'])
 def crawl():
+    print("/crawl 라우트 호출됨")
     try:
         data = request.get_json()
+        print(f"받은 데이터: {data}")
         search_keyword = data.get('search_keyword')
-        scroll_count = int(data.get('scroll_count', 5))
+        # scroll_count 처리 방식 수정
+        scroll_count = data.get('scroll_count')
+        if isinstance(scroll_count, dict):
+            scroll_count = scroll_count.get('value', 5)
+        scroll_count = int(scroll_count) if scroll_count else 5
         
         if not search_keyword:
             return jsonify({"error": "검색어를 입력해주세요."}), 400
@@ -133,6 +155,7 @@ def crawl():
             "sample": news_data[:3] if len(news_data) >= 3 else news_data
         })
     except Exception as e:
+        print(f"/crawl 라우트 오류: {str(e)}")
         return jsonify({"error": f"요청 처리 중 오류가 발생했습니다: {str(e)}"}), 500
 
 @app.route('/download', methods=['POST'])
@@ -180,4 +203,12 @@ def download():
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
+    print(f"서버 시작: 포트 {port}")
     app.run(host='0.0.0.0', port=port, debug=True)
+else:
+    # WSGI 애플리케이션 설정을 명확히
+    print("WSGI 애플리케이션으로 실행됨")
+    # 라우트 목록 출력
+    print("등록된 라우트:")
+    for rule in app.url_map.iter_rules():
+        print(f"{rule.endpoint}: {rule.rule} [{', '.join(rule.methods)}]")

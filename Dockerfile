@@ -1,35 +1,46 @@
 FROM python:3.9-slim
 
-# Chrome 설치 및 의존성 추가
+# Install basic dependencies
 RUN apt-get update && apt-get install -y \
     wget \
-    gnupg \
     unzip \
     fonts-nanum \
-    && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
-    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list \
+    xvfb \
+    gnupg \
+    curl \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Chrome
+RUN curl -sS -o - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list \
     && apt-get update \
     && apt-get install -y google-chrome-stable \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# 작업 디렉토리 설정
+# Set working directory
 WORKDIR /app
 
-# 필요한 파일 복사
+# Copy and install requirements
 COPY requirements.txt .
-
-# 의존성 설치
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 애플리케이션 파일 복사
+# Copy application files
 COPY . .
 
-# Chrome 옵션 환경변수 설정
-ENV CHROME_OPTIONS="--headless --disable-gpu --no-sandbox --disable-dev-shm-usage --disable-software-rasterizer"
+# Set Chrome options
+ENV PYTHONPATH="/app"
+ENV CHROME_OPTIONS="--headless=new --no-sandbox --disable-dev-shm-usage --disable-gpu"
+ENV PORT=8080
+ENV FLASK_APP=app.py
+ENV FLASK_ENV=production
 
-# 포트 설정
-ENV PORT 8080
+# 앱 디렉토리를 볼륨으로 노출
+VOLUME /app
 
-# 실행 명령
-CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 app:app
+# 포트 노출
+EXPOSE 8080
+
+# Run command - 직접 Flask 실행으로 변경
+CMD ["flask", "run", "--host=0.0.0.0", "--port=8080"]

@@ -32,7 +32,7 @@ $(document).ready(function() {
         
         // 크롤링 요청
         $.ajax({
-            url: '/crawl',
+            url: window.location.origin + '/crawl',  // 절대 경로로 변경
             type: 'POST',
             contentType: 'application/json',
             data: JSON.stringify({
@@ -94,7 +94,7 @@ $(document).ready(function() {
         }
         
         // 다운로드 요청
-        fetch('/download', {
+        fetch(window.location.origin + '/download', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
