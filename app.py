@@ -1,35 +1,21 @@
-import streamlit as st
-import pandas as pd
-import time
 import os
+import time
 import base64
 import io
+import json
+from flask import Flask, render_template, request, jsonify, send_file
+import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
-# 앱 설정
-st.set_page_config(
-    page_title="네이버 뉴스 크롤러",
-    page_icon="📰",
-    layout="wide"
-)
-
-# DataFrame을 다운로드 링크로 변환하는 함수
-def get_download_link(df, filename, text):
-    towrite = io.BytesIO()
-    df.to_excel(towrite, index=False, engine='openpyxl')
-    towrite.seek(0)
-    b64 = base64.b64encode(towrite.read()).decode()
-    href = f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="{filename}.xlsx">{text}</a>'
-    return href
+app = Flask(__name__)
 
 # 네이버 뉴스 크롤링 함수
-def crawl_naver_news(search_keyword, scroll_count, progress_bar, status_text):
+def crawl_naver_news(search_keyword, scroll_count):
     news_data = []
+    progress_info = {"current": 0, "total": scroll_count}
     
     # Chrome 옵션 설정
     options = webdriver.ChromeOptions()
@@ -38,7 +24,11 @@ def crawl_naver_news(search_keyword, scroll_count, progress_bar, status_text):
     options.add_argument('--disable-dev-shm-usage')
     
     # 웹드라이버 초기화
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+    try:
+        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+    except Exception as e:
+        print(f"웹드라이버 초기화 오류: {str(e)}")
+        return []
     
     try:
         # 네이버 뉴스 검색 페이지로 이동
@@ -49,9 +39,7 @@ def crawl_naver_news(search_keyword, scroll_count, progress_bar, status_text):
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
             time.sleep(2)
             
-            progress_value = (i + 1) / scroll_count
-            progress_bar.progress(progress_value)
-            status_text.text(f"스크롤 {i+1}/{scroll_count} 완료")
+            progress_info["current"] = i + 1
             
             # 뉴스 아이템 찾기
             news_items = driver.find_elements(By.CSS_SELECTOR, "li.bx")
@@ -108,71 +96,84 @@ def crawl_naver_news(search_keyword, scroll_count, progress_bar, status_text):
                     continue
         
     except Exception as e:
-        status_text.text(f"오류 발생: {str(e)}")
+        print(f"크롤링 오류 발생: {str(e)}")
     
     finally:
         driver.quit()
     
     return news_data
 
-# 메인 앱 함수
-def main():
-    st.title("네이버 뉴스 크롤러")
-    st.markdown("네이버 뉴스 검색 결과를 크롤링하여 Excel 파일로 저장합니다.")
-    
-    # 사이드바 설정
-    with st.sidebar:
-        st.header("검색 설정")
-        search_keyword = st.text_input("검색어를 입력하세요")
-        scroll_count = st.slider("스크롤 횟수", min_value=1, max_value=20, value=5, 
-                                help="더 많은 결과를 얻으려면 스크롤 횟수를 늘리세요")
-        
-        start_button = st.button("크롤링 시작", disabled=not search_keyword)
-    
-    # 메인 영역
-    if not search_keyword:
-        st.info("👈 사이드바에서 검색어를 입력하고 크롤링을 시작하세요.")
-    
-    # 크롤링 시작
-    if start_button:
-        st.subheader("크롤링 진행 상황")
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        status_text.text("크롤링을 시작합니다...")
-        
-        # 크롤링 실행
-        news_data = crawl_naver_news(search_keyword, scroll_count, progress_bar, status_text)
-        
-        # 결과 표시
-        if not news_data:
-            st.warning("검색 결과가 없습니다.")
-        else:
-            st.success(f"크롤링 완료! 총 {len(news_data)}개의 뉴스 기사를 찾았습니다.")
-            
-            # DataFrame 생성
-            df = pd.DataFrame(news_data)
-            
-            # 엑셀 다운로드 링크
-            excel_link = get_download_link(df, f"naver_news_{search_keyword}", "📥 Excel 파일 다운로드")
-            st.markdown(excel_link, unsafe_allow_html=True)
-            
-            # 샘플 뉴스 표시
-            st.subheader("샘플 뉴스")
-            for i, news in enumerate(news_data[:3], 1):
-                with st.expander(f"뉴스 {i}: {news['title']}"):
-                    st.write(f"**언론사:** {news['press']}")
-                    st.write(f"**시간:** {news['time']}")
-                    if news['page_info']:
-                        st.write(f"**지면 정보:** {news['page_info']}")
-                    st.write(f"**내용:** {news['description']}")
-                    st.write(f"**링크:** [{news['link']}]({news['link']})")
-                    if news['naver_news_link']:
-                        st.write(f"**네이버 뉴스 링크:** [{news['naver_news_link']}]({news['naver_news_link']})")
-            
-            # 전체 데이터 테이블 표시
-            st.subheader("전체 데이터")
-            st.dataframe(df)
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-if __name__ == "__main__":
-    main()
+@app.route('/crawl', methods=['POST'])
+def crawl():
+    try:
+        data = request.get_json()
+        search_keyword = data.get('search_keyword')
+        scroll_count = int(data.get('scroll_count', 5))
+        
+        if not search_keyword:
+            return jsonify({"error": "검색어를 입력해주세요."}), 400
+        
+        news_data = crawl_naver_news(search_keyword, scroll_count)
+        
+        if not news_data:
+            return jsonify({"error": "검색 결과가 없습니다."}), 404
+        
+        return jsonify({
+            "success": True,
+            "count": len(news_data),
+            "data": news_data,
+            "sample": news_data[:3] if len(news_data) >= 3 else news_data
+        })
+    except Exception as e:
+        return jsonify({"error": f"요청 처리 중 오류가 발생했습니다: {str(e)}"}), 500
+
+@app.route('/download', methods=['POST'])
+def download():
+    try:
+        data = request.get_json()
+        news_data = data.get('news_data', [])
+        search_keyword = data.get('search_keyword', 'naver_news')
+        
+        if not news_data:
+            return jsonify({"error": "다운로드할 데이터가 없습니다."}), 400
+        
+        # DataFrame 생성
+        df = pd.DataFrame(news_data)
+        
+        # 'page_info' 칼럼 제거
+        if 'page_info' in df.columns:
+            df = df.drop(columns=['page_info'])
+        
+        # 엑셀 파일 생성 - 더 안정적인 방식
+        output = io.BytesIO()
+        try:
+            # 먼저 context manager 방식 시도
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False)
+        except Exception as e:
+            # 실패 시 기존 방식으로 대체
+            writer = pd.ExcelWriter(output, engine='openpyxl')
+            df.to_excel(writer, index=False)
+            writer.save()
+        
+        output.seek(0)
+        
+        # 파일 전송
+        filename = f"naver_news_{search_keyword}.xlsx"
+        
+        return send_file(
+            output,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+    except Exception as e:
+        return jsonify({"error": f"파일 다운로드 중 오류가 발생했습니다: {str(e)}"}), 500
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port, debug=True)
