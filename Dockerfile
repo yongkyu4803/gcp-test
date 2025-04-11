@@ -13,9 +13,6 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Chrome WebDriver 설정
-ENV CHROME_VERSION=$(google-chrome --version | awk '{ print $3 }' | awk -F'.' '{ print $1 }')
-
 # 작업 디렉토리 설정
 WORKDIR /app
 
