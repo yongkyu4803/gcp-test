@@ -29,3 +29,17 @@ ENV/
 *.swo
 .DS_Store
 Thumbs.db
+
+# Selenium WebDriver
+chromedriver*
+geckodriver*
+.wdm/
+drivers/
+
+# Excel temp files
+~$*.xlsx
+*.xlk
+
+# Log files
+*.log
+debug.log
